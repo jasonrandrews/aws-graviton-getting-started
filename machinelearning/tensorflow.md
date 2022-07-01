@@ -10,9 +10,18 @@ There are multiple levels of software package abstractions available: Python whe
 **Using Python wheel**
 
 TensorFlow wheel supports optimized onednn+acl backend for Graviton CPUs.
+
+On a new Ubuntu instance, install pip.
+```
+sudo apt update ; sudo apt upgrade -y ; sudo apt install python3-pip python-is-python3 -y
+```
+
+Install TensorFlow. The installation will take about 5 minutes.
+
 ```
 pip install tensorflow-cpu-aws
 ```
+
 
 **Using Docker hub container**
 
@@ -23,6 +32,16 @@ docker pull armswdev/tensorflow-arm-neoverse
 # launch the docker image
 docker run -it --rm -v /home/ubuntu/:/hostfs armswdev/tensorflow-arm-neoverse
 ```
+
+**Installation Test**
+
+Using either the Python wheel or the Docker container, run an installation test.
+
+```
+echo "import tensorflow as tf ; print(tf.__version__) ; print(tf.reduce_sum(tf.random.normal([1000,1000])))"  | python
+```
+
+The TensorFlow version and the result of the reduce_sum should be printed, confirming TensorFlow is installed. 
 
 **Using AWS DLAMI**
 
@@ -65,7 +84,7 @@ grep -q bf16 /proc/cpuinfo && export DNNL_DEFAULT_FPMATH_MODE=BF16
 
 # Make sure the openmp threads are distributed across all the processes for multi process applications to avoid over subscription for the vcpus.
 num_vcpus=$(getconf _NPROCESSORS_ONLN)
-num_processes=<number of processes>
+num_processes=1
 export OMP_NUM_THREADS=$((1 > ($num_vcpus/$num_processes) ? 1 : ($num_vcpus/$num_processes)))
 export OMP_PROC_BIND=false
 export OMP_PLACES=cores
@@ -98,30 +117,38 @@ Note: While the Grappler optimizer covers majority of the networks, there are fe
 # Evaluate performance with the standard MLPerf inference benchmarks
 
 1. Setup MLPerf inference benchmarks and the required tools.
-```
-sudo apt install -y build-essential cmake libgl1-mesa-glx libglib2.0-0 libsm6 libxrender1 libxext6 python3-pip
 
+Install required tools
+
+```
+sudo apt install -y build-essential cmake libgl1-mesa-glx libglib2.0-0 libsm6 libxrender1 libxext6 python3-pip python3-ck
+```
+
+Install MLPerf
+
+```
 git clone https://github.com/mlcommons/inference.git --recursive
 cd inference
-git checkout 5ec3ac922556107ce0f6ca63c175d379017ba3d8
+git checkout v2.0
 cd loadgen
 CFLAGS="-std=c++14" python3 setup.py bdist_wheel
-pip install <dist/*.whl>
+pip install dist/*.whl
+cd ../..
 ```
 
 2. Benchmark image classification with Resnet50
 ```
-sudo apt install python3-ck
 ck pull repo:ck-env
 
 # Download ImageNet's validation set
 # These will be installed to ${HOME}/CK_TOOLS/
 # Select option 1: val-min data set.
-ck install package --tags=image-classification,dataset,imagenet,aux
-ck install package --tags=image-classification,dataset,imagenet,val
+echo 0 | ck install package --tags=image-classification,dataset,imagenet,aux
+echo 1 | ck install package --tags=image-classification,dataset,imagenet,val
 
 # Copy the labels into the image location
-cp ${HOME}/CK-TOOLS/dataset-imagenet-ilsvrc2012-aux/val.txt ${HOME}/CK-TOOLS/dataset-imagenet-ilsvrc2012-val-min/val_map.txt
+cp ${HOME}/CK-TOOLS/dataset-imagenet-ilsvrc2012-aux-from.berkeley/val.txt ${HOME}/CK-TOOLS/dataset-imagenet-ilsvrc2012-val-min/val_map.txt
+
 
 cd inference/vision/classification_and_detection
 wget https://zenodo.org/record/2535873/files/resnet50_v1.pb
@@ -140,17 +167,18 @@ export MODEL_DIR=${HOME}/inference/vision/classification_and_detection
 export MLPERF_NUM_INTER_THREADS=1
 
 num_vcpus=$(getconf _NPROCESSORS_ONLN)
-num_processes=<number of processes>
+num_processes=1
 export MLPERF_NUM_INTRA_THREADS=$((1 > ($num_vcpus/$num_processes) ? 1 : ($num_vcpus/$num_processes)))
 
 ./run_local.sh tf resnet50 cpu --scenario=Offline
+
 ```
 
 3. Benchmark natual language processing with Bert
 ```
 cd inference/language/bert
 make setup
-python3 run.py --backend=tf --scenario=Offline
+python run.py --backend=tf --scenario=Offline
 ```
 
 # Troubleshooting performance issues
